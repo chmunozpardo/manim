@@ -11,7 +11,7 @@ from manimlib.utils.bezier import get_smooth_handle_points
 from manimlib.utils.bezier import interpolate
 from manimlib.utils.bezier import integer_interpolate
 from manimlib.utils.bezier import partial_bezier_points
-from manimlib.utils.color import color_to_rgba
+from manimlib.utils.color import color_to_rgba, rgba_to_color
 from manimlib.utils.iterables import make_even
 from manimlib.utils.iterables import stretch_array_to_length
 from manimlib.utils.iterables import tuplify
@@ -34,7 +34,7 @@ class VMobject(Mobject):
         "fill_opacity": 0.0,
         "stroke_color": None,
         "stroke_opacity": 1.0,
-        "stroke_width": DEFAULT_STROKE_WIDTH,
+        "stroke_width": 0.0,
         # The purpose of background stroke is to have
         # something that won't overlap the fill, e.g.
         # For text against some textured background
@@ -66,6 +66,12 @@ class VMobject(Mobject):
 
     # Colors
     def init_colors(self):
+        if len(self.submobjects) > 0:
+            for m in self.submobjects:
+                m.init_colors()
+        if hasattr(self, "fill_rgbas"):
+            self.fill_color = rgba_to_color(self.fill_rgbas[0])
+            self.fill_opacity = 1.0
         self.set_fill(
             color=self.fill_color or self.color,
             opacity=self.fill_opacity,

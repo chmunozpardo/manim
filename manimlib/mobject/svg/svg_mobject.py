@@ -49,25 +49,48 @@ class SVGMobject(VMobject):
         VMobject.__init__(self, **kwargs)
         self.move_into_position()
 
-    def append_color(self, element):
-        if self.fill_colors:
-            fill_color = element.getAttribute("fill")
-            if fill_color:
-                if fill_color == "none":
-                    self.color_fills.append("#000000")
-                elif len(fill_color) == 4:
-                    new_color_fill = fill_color[0] + fill_color[1]*2+fill_color[2]*2+fill_color[3]*2
-                    self.color_fills.append(new_color_fill)
-                else:
-                    self.color_fills.append(fill_color)
+    def check_fill(self, element):
+        if not isinstance(element, minidom.Element):
+            return "none"
+        else:
+            fill_t = element.getAttribute('fill')
+            if fill_t and not fill_t == "none":
+                if len(fill_t) == 4:
+                    fill_t = "#" + fill_t[1]*2 + fill_t[2]*2 + fill_t[3]*2
+                return fill_t
             else:
-                self.color_fills.append("#000000")
+                return self.check_fill(element.parentNode)
 
-    def paint(self):
-        print(self.color_fills)
-        print(self.submobjects)
-        for index in range(len(self.submobjects)):
-            self[index].set_color(self.color_fills[index])
+    # Colors
+    def init_colors(self):
+        if len(self.submobjects) > 0:
+            for m in self.submobjects:
+                m.init_colors()
+        if hasattr(self, "fill_rgbas"):
+            self.fill_color = rgba_to_color(self.fill_rgbas[0])
+            self.fill_opacity = 1.0
+            self.set_fill(
+                color=self.fill_color or self.color,
+                opacity=self.fill_opacity,
+            )
+            self.set_stroke(
+                color=self.stroke_color or self.color,
+                width=self.stroke_width,
+                opacity=self.stroke_opacity,
+            )
+            self.set_background_stroke(
+                color=self.background_stroke_color,
+                width=self.background_stroke_width,
+                opacity=self.background_stroke_opacity,
+            )
+            self.set_sheen(
+                factor=self.sheen_factor,
+                direction=self.sheen_direction,
+            )
+        else:
+            self.fill_opacity = 0.0
+        
+        return self
 
     def ensure_valid_file(self):
         if self.file_name is None:
@@ -114,21 +137,20 @@ class SVGMobject(VMobject):
         elif element.tagName == 'path':
             temp = element.getAttribute('d')
             if temp != '':
-                result.append(self.path_string_to_mobject(temp))
-            self.append_color(element)
+                fill_color = self.check_fill(element)
+                if not fill_color == "none":
+                    result.append(self.path_string_to_mobject(temp).set_color(fill_color))
+                else:
+                    result.append(self.path_string_to_mobject(temp))
         elif element.tagName == 'use':
             result += self.use_to_mobjects(element)
         elif element.tagName == 'rect':
             result.append(self.rect_to_mobject(element))
-            self.append_color(element)
         elif element.tagName == 'circle':
             result.append(self.circle_to_mobject(element))
-            self.append_color(element)
         elif element.tagName == 'ellipse':
             result.append(self.ellipse_to_mobject(element))
-            self.append_color(element)
         elif element.tagName in ['polygon', 'polyline']:
-            self.append_color(element)
             result.append(self.polygon_to_mobject(element))
         else:
             pass  # TODO
@@ -255,9 +277,17 @@ class SVGMobject(VMobject):
     def handle_transforms(self, element, mobject):
         x, y = 0, 0
         try:
-            x = self.attribute_to_float(element.getAttribute('x'))
+            x_attr = element.getAttribute('x')
+            y_attr = element.getAttribute('y')
+            if x_attr:
+                x = self.attribute_to_float(x_attr)
             # Flip y
-            y = -self.attribute_to_float(element.getAttribute('y'))
+            else:
+                x = 0
+            if y_attr:
+                y = -self.attribute_to_float(y_attr)
+            else:
+                y = 0
             mobject.shift(x * RIGHT + y * UP)
         except:
             pass
