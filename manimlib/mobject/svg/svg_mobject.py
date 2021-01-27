@@ -17,26 +17,33 @@ from manimlib.utils.config_ops import digest_config
 from manimlib.utils.config_ops import digest_locals
 
 
-def string_to_numbers(num_string):
+def string_to_numbers(num_string, arc=False):
+    output = []
     num_string = num_string.replace("-", ",-")
     num_string = num_string.replace("e,-", "e-")
-    return [
-        float(s)
-        for s in re.split("[ ,]", num_string)
-        if s != ""
-    ]
-
+    if arc:
+        num_string = re.sub("(\d*\.?\d+)\s?(\d*\.?\d+)\s?([0-1])\s?([0-1])\s?([0-1])\s?", r"\1 \2 \3 \4 \5 ", num_string)
+    for s in re.split("[ ,]", num_string):
+        if len(re.split("[ .]", s)) > 2:
+            tmp = re.split("[ .]", s)
+            first = tmp[0]+"."+tmp[1]
+            output.append(float(first))
+            for t in tmp[2:]:
+                output.append(float("."+t))
+        elif s != "":
+            output.append(float(s))
+    return output
 
 class SVGMobject(VMobject):
     CONFIG = {
         "should_center": True,
-        "height": 2,
+        "height": 5,
         "width": None,
         # Must be filled in in a subclass, or when called
         "file_name": None,
         "fill_colors": True,
         "unpack_groups": True,  # if False, creates a hierarchy of VGroups
-        "stroke_width": 1.0,
+        "stroke_width": 0.0,
         "fill_opacity": 1.0,
         # "fill_color" : LIGHT_GREY,
     }
@@ -46,18 +53,71 @@ class SVGMobject(VMobject):
         self.file_name = file_name or self.file_name
         self.color_fills = []
         self.ensure_valid_file()
+        # self.height = 0
+        # self.width = 0
         VMobject.__init__(self, **kwargs)
         self.move_into_position()
+
+    def check_stroke_width(self, element):
+        if not isinstance(element, minidom.Element):
+            return "none"
+        else:
+            fill_t = element.getAttribute('stroke-width')
+            fill_style = element.getAttribute('style')
+            if fill_t and not fill_t == "none":
+                return fill_t
+            elif fill_style and not fill_style == "none":
+                if re.search("stroke-width:(-?[0-9]*(\.[0-9]*)?){1}", fill_style):
+                    splt = re.split("stroke-width:(-?[0-9]*(\.[0-9]*)?){1}", fill_style)[1]
+                    return float(splt)
+                else:
+                    return self.check_stroke_width(element.parentNode)
+            else:
+                return self.check_stroke_width(element.parentNode)
+
+    def check_stroke_color(self, element):
+        if not isinstance(element, minidom.Element):
+            return "none"
+        else:
+            fill_t = element.getAttribute('stroke')
+            fill_style = element.getAttribute('style')
+            if fill_t and not fill_t == "none":
+                if len(fill_t) == 4:
+                    fill_t = "#" + fill_t[1]*2 + fill_t[2]*2 + fill_t[3]*2
+                return fill_t
+            elif fill_style and not fill_style == "none":
+                if re.search("stroke:(#[0-9a-fA-F]+){1}", fill_style):
+                    splt = re.split("stroke:(#[0-9a-fA-F]+){1}", fill_style)[1]
+                    if len(splt) == 4:
+                        splt = "#" + splt[1]*2 + splt[2]*2 + splt[3]*2
+                    return splt
+                else:
+                    return self.check_stroke_color(element.parentNode)
+            else:
+                return self.check_stroke_color(element.parentNode)
 
     def check_fill(self, element):
         if not isinstance(element, minidom.Element):
             return "none"
         else:
             fill_t = element.getAttribute('fill')
+            fill_style = element.getAttribute('style')
             if fill_t and not fill_t == "none":
+                if fill_t[:3] == "url":
+                    return "none"
                 if len(fill_t) == 4:
                     fill_t = "#" + fill_t[1]*2 + fill_t[2]*2 + fill_t[3]*2
                 return fill_t
+            elif fill_style and not fill_style == "none":
+                if re.search("fill:(#[0-9a-fA-F]+){1}", fill_style):
+                    splt = re.split("fill:(#[0-9a-fA-F]+){1}", fill_style)[1]
+                    if fill_t[:3] == "url":
+                        return "none"
+                    if len(splt) == 4:
+                        splt = "#" + splt[1]*2 + splt[2]*2 + splt[3]*2
+                    return splt
+                else:
+                    return self.check_fill(element.parentNode)
             else:
                 return self.check_fill(element.parentNode)
 
@@ -66,29 +126,12 @@ class SVGMobject(VMobject):
         if len(self.submobjects) > 0:
             for m in self.submobjects:
                 m.init_colors()
-        if hasattr(self, "fill_rgbas"):
-            self.fill_color = rgba_to_color(self.fill_rgbas[0])
-            self.fill_opacity = 1.0
-            self.set_fill(
-                color=self.fill_color or self.color,
-                opacity=self.fill_opacity,
-            )
-            self.set_stroke(
-                color=self.stroke_color or self.color,
-                width=self.stroke_width,
-                opacity=self.stroke_opacity,
-            )
-            self.set_background_stroke(
-                color=self.background_stroke_color,
-                width=self.background_stroke_width,
-                opacity=self.background_stroke_opacity,
-            )
-            self.set_sheen(
-                factor=self.sheen_factor,
-                direction=self.sheen_direction,
-            )
-        else:
-            self.fill_opacity = 0.0
+        self.fill_opacity = 1.0
+        self.fill_rgbas = np.array([[1.0, 1.0, 1.0, 1.0]])
+        self.background_stroke_rgbas = np.array([[0.0, 0.0, 0.0, 1.0]])
+        self.stroke_rgbas = np.array([[0.0, 0.0, 0.0, 1.0]])
+        self.stroke_width = 1.0
+        self.stroke_opacity = 1.0
         
         return self
 
@@ -124,7 +167,7 @@ class SVGMobject(VMobject):
         if not isinstance(element, minidom.Element):
             return result
         if element.getAttribute('id'):
-                self.update_ref_to_element(element)
+            self.update_ref_to_element(element)
         if element.tagName == 'defs':
             self.update_ref_to_element(element)
         elif element.tagName == 'style':
@@ -137,11 +180,7 @@ class SVGMobject(VMobject):
         elif element.tagName == 'path':
             temp = element.getAttribute('d')
             if temp != '':
-                fill_color = self.check_fill(element)
-                if not fill_color == "none":
-                    result.append(self.path_string_to_mobject(temp).set_color(fill_color))
-                else:
-                    result.append(self.path_string_to_mobject(temp))
+                result.append(self.path_string_to_mobject(temp))
         elif element.tagName == 'use':
             result += self.use_to_mobjects(element)
         elif element.tagName == 'rect':
@@ -154,6 +193,29 @@ class SVGMobject(VMobject):
             result.append(self.polygon_to_mobject(element))
         else:
             pass  # TODO
+    
+        # We check for color fill and strokes
+        if len(result) > 0:
+            if element.tagName not in ['id', 'g', 'svg', 'symbol', 'style', 'use']:
+                fill_color = self.check_fill(element)
+                strike_width = self.check_stroke_width(element)
+                strike_color = self.check_stroke_color(element)
+                deleted = False
+                if not fill_color == "none":
+                    result[-1].set_fill(fill_color, opacity=1.0)
+                    if not strike_width == "none":
+                        strike_width = float(strike_width)
+                        if not strike_color == "none":
+                            result[-1].set_stroke(color=strike_color, width=strike_width, opacity=1.0)
+                        else:
+                            result[-1].set_stroke(color=BLACK, width=strike_width, opacity=1.0)
+                    elif not strike_color == "none":
+                        strike_width = 1.0
+                        result[-1].set_stroke(color=strike_color, width=strike_width, opacity=1.0)
+                # If the last element was not a TeX string and has no color
+                # we delete it
+                elif not hasattr(self, "tex_string"):
+                    del result[-1]
             # warnings.warn("Unknown element type: " + element.tagName)
         result = [m for m in result if m is not None]
         self.handle_transforms(element, VGroup(*result))
@@ -193,8 +255,6 @@ class SVGMobject(VMobject):
             path_string = path_string.replace(" " + digit, " L" + digit)
         path_string = "M" + path_string
         return self.path_string_to_mobject(path_string)
-
-    # <circle class="st1" cx="143.8" cy="268" r="22.6"/>
 
     def circle_to_mobject(self, circle_element):
         x, y, r = [
@@ -417,7 +477,9 @@ class VMobjectFromSVGPathstring(VMobject):
         # new_points are the points that will be added to the curr_points
         # list. This variable may get modified in the conditionals below.
         points = self.points
-        new_points = self.string_to_points(coord_string)
+        arc_bool = command == "A"
+        new_points = self.string_to_points(coord_string, arc=arc_bool)
+        vh_points = string_to_numbers(coord_string, arc=arc_bool)
 
         temp_points = new_points.copy()
         if isLower and len(points) > 0:
@@ -450,15 +512,24 @@ class VMobjectFromSVGPathstring(VMobject):
 
         elif command in ["L", "H", "V"]:  # lineto
             if command == "H":
-                new_points[0, 1] = points[-1, 1]
-                self.add_line_to(new_points[0])
+                diff = np.array([0.0, 0.0, 0.0])
+                for i in range(len(vh_points)):
+                    if isLower:
+                        diff[0] += vh_points[i]
+                        self.add_line_to(points[-1] + diff)
+                    else:
+                        new_points[i, 1] = points[-1, 1]
+                        self.add_line_to(new_points[i])
             elif command == "V":
-                if isLower:
-                    new_points[0, 0] -= points[-1, 0]
-                    new_points[0, 0] += points[-1, 1]
-                new_points[0, 1] = new_points[0, 0]
-                new_points[0, 0] = points[-1, 0]
-                self.add_line_to(new_points[0])
+                diff = np.array([0.0, 0.0, 0.0])
+                for i in range(len(vh_points)):
+                    if isLower:
+                        diff[1] += vh_points[i]
+                        self.add_line_to(points[-1] + diff)
+                    else:
+                        new_points[i, 1] = new_points[i, 0]
+                        new_points[i, 0] = points[-1, 0]
+                        self.add_line_to(new_points[i])
             elif command == "L":
                 diff = 0
                 for i in range(len(new_points)):
@@ -485,10 +556,25 @@ class VMobjectFromSVGPathstring(VMobject):
             return
         elif command == "Q":  # quadratic Bezier curve
             # TODO, this is a suboptimal approximation
-            new_points = np.append([new_points[0]], new_points, axis=0)
+            for i in range(0, len(new_points), 2):
+                tmp = []
+                if isLower:
+                    tmp = [
+                        2/3*temp_points[i],
+                        2/3*temp_points[i] + 1/3*temp_points[i+1],
+                        temp_points[i+1]
+                    ] + self.points[-1]
+                else:
+                    tmp = [
+                        1/3*self.points[-1] + 2/3*new_points[i],
+                        1/3*new_points[i+1] + 2/3*new_points[i],
+                        new_points[i+1]
+                    ]
+                self.add_cubic_bezier_curve_to(*tmp)
+            return
         elif command == "A":  # elliptical Arc
             previous_point = self.points[-1]
-            arc_parameters = string_to_numbers(coord_string)
+            arc_parameters = string_to_numbers(coord_string, arc=True)
             if isLower:
                 arc_parameters[5] = arc_parameters[5] + previous_point[0]
                 arc_parameters[6] = arc_parameters[6] + previous_point[1]
@@ -508,7 +594,7 @@ class VMobjectFromSVGPathstring(VMobject):
             return
         elif command == "Z":  # closepath
             self.z_state = True
-            self.add_line_to(self.start_point)
+            #self.add_line_to(self.start_point)
             return
 
         # Add first three points
@@ -523,8 +609,8 @@ class VMobjectFromSVGPathstring(VMobject):
                     new_points[i:i + 3] += new_points[i - 1]
                 self.add_cubic_bezier_curve_to(*new_points[i:i+3])
 
-    def string_to_points(self, coord_string):
-        numbers = string_to_numbers(coord_string)
+    def string_to_points(self, coord_string, arc=False):
+        numbers = string_to_numbers(coord_string, arc)
         if len(numbers) % 2 == 1:
             numbers.append(0)
         num_points = len(numbers) // 2

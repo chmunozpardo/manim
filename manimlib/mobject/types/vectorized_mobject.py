@@ -33,7 +33,7 @@ class VMobject(Mobject):
         "fill_color": None,
         "fill_opacity": 0.0,
         "stroke_color": None,
-        "stroke_opacity": 1.0,
+        "stroke_opacity": 0.0,
         "stroke_width": 0.0,
         # The purpose of background stroke is to have
         # something that won't overlap the fill, e.g.
@@ -72,6 +72,9 @@ class VMobject(Mobject):
         if hasattr(self, "fill_rgbas"):
             self.fill_color = rgba_to_color(self.fill_rgbas[0])
             self.fill_opacity = 1.0
+        if hasattr(self, "stroke_rgbas"):
+            self.stroke_color = rgba_to_color(self.stroke_rgbas[0])
+            self.stroke_opacity = 1.0
         self.set_fill(
             color=self.fill_color or self.color,
             opacity=self.fill_opacity,

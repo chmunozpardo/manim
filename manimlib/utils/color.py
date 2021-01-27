@@ -40,10 +40,13 @@ def rgb_to_hex(rgb):
 
 def hex_to_rgb(hex_code):
     hex_part = hex_code[1:]
+    hex_result = 0
     if len(hex_part) == 3:
-        "".join([2 * c for c in hex_part])
+        hex_result = "".join([2 * c for c in hex_part])
+    else:
+        hex_result = hex_part
     return np.array([
-        int(hex_part[i:i + 2], 16) / 255
+        int(hex_result[i:i + 2], 16) / 255
         for i in range(0, 6, 2)
     ])
 
